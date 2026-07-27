@@ -251,7 +251,8 @@ section { padding-top: 38px; }
   padding: 16px 17px; box-shadow: var(--shadow); position: relative; overflow: hidden;
 }
 .tile::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--brand-red);
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--tile-accent, var(--brand-red));
 }
 .tile.gold::before { background: var(--brand-gold); }
 .tile.neutral::before { background: var(--baseline); }
@@ -262,6 +263,9 @@ section { padding-top: 38px; }
 .tile-value { font-size: 32px; font-weight: 780; letter-spacing: -.03em; line-height: 1; }
 .tile-value small { font-size: 15px; font-weight: 600; color: var(--text-secondary); margin-left: 3px; letter-spacing: 0; }
 .tile-note { font-size: 12.5px; color: var(--text-secondary); margin: 7px 0 0; }
+/* barra de cobertura (cards de exames realizados) */
+.cov-bar { margin-top: 9px; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.cov-fill { height: 100%; border-radius: 999px; }
 
 /* ============================ figuras ============================ */
 figure.card {
@@ -495,6 +499,21 @@ footer {
   border-radius: var(--radius-sm); padding: 10px 12px;
 }
 .clin-copy:focus-visible { outline: 2px solid var(--brand-red); outline-offset: 2px; }
+
+/* grade de risco cardiovascular residual (drill-down) */
+.residual-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 6px;
+}
+.residual-item {
+  display: flex; flex-direction: column; gap: 1px;
+  background: var(--surface-1); border: 1px solid var(--hairline-strong);
+  border-left: 3px solid var(--brand-gold); border-radius: var(--radius-sm); padding: 8px 11px;
+}
+.residual-item.vazio { border-left-color: var(--hairline-strong); opacity: .7; }
+.residual-item .ri-nome { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.residual-item .ri-valor { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.residual-item.vazio .ri-valor { font-size: 12.5px; font-weight: 600; color: var(--text-muted); font-style: italic; }
+.residual-item .ri-ref { font-size: 10.8px; color: var(--text-muted); line-height: 1.3; }
 
 /* bullets das leituras */
 .analysis ul { margin: 10px 0 0; padding-left: 0; list-style: none; }
@@ -3072,15 +3091,16 @@ if (!window.CDH_PUBLICO) {
       h("p", { class: "tile-note" }, `${fmt0(top.filter((l) => l.atero === 1).length)} com aterosclerose · ${fmt0(top.filter((l) => l.dm === 1).length)} com diabetes`))));
 
   const tabelaCompleta = () => tabela(
-    ["#", "Militar", "RG", "Sexo", "Idade", "Escore", "PA", "IMC", "Cintura", "LDL", "Glicose", "TG", "HDL", "DM", "Aterosc.", "ECG", "Carga", "Principais motivos"],
+    ["#", "Militar", "RG", "Sexo", "Idade", "Escore", "PAS", "PAD", "IMC", "Cintura", "LDL", "HDL", "TG",
+     "Glicose", "HbA1c", "Creatinina", "eTFG (CKD-EPI)", "DM", "Aterosc.", "ECG", "Carga", "Principais motivos"],
     R.linhas.map((l) => [
       l.posicao, l.nome, l.rg, l.sexo, l.idade === null ? "—" : fmt0(l.idade), l.escore,
-      l.pas === null ? "—" : `${fmt0(l.pas)}/${fmt0(l.pad)}`,
+      l.pas === null ? "—" : fmt0(l.pas), l.pad === null ? "—" : fmt0(l.pad),
       l.imc === null ? "—" : fmt(l.imc, 1), l.ca === null ? "—" : fmt0(l.ca),
-      l.ldl === null ? "—" : fmt0(l.ldl),
-      l.hba1c == null ? "—" : fmt(l.hba1c, 1), l.etfg == null ? "—" : fmt0(l.etfg),
-      l.glicose === null ? "—" : fmt0(l.glicose),
-      l.tg === null ? "—" : fmt0(l.tg), l.hdl === null ? "—" : fmt0(l.hdl),
+      l.ldl === null ? "—" : fmt0(l.ldl), l.hdl === null ? "—" : fmt0(l.hdl),
+      l.tg === null ? "—" : fmt0(l.tg), l.glicose === null ? "—" : fmt0(l.glicose),
+      l.hba1c == null ? "—" : fmt(l.hba1c, 1),
+      l.cr == null ? "—" : fmt(l.cr, 2), l.etfg_ckdepi == null ? "—" : fmt0(l.etfg_ckdepi),
       l.dm ? "sim" : "—", l.atero === 1 ? "sim" : l.atero === 0 ? "não" : "PENDENTE",
       l.ecg === "Normal" ? "normal" : l.ecg === "Não informado" || l.ecg === "nan" ? "—" : l.ecg,
       l.carga === null ? "—" : fmt0(l.carga), l.motivos.join(" · "),
@@ -3098,6 +3118,22 @@ if (!window.CDH_PUBLICO) {
   function pillAtero(l) {
     const f = flagAtero(l);
     return h("span", { class: "atero-pill", style: `background:${f.cor}` }, `${f.icone} ${f.texto}`);
+  }
+
+  /* ---- estádio de função renal KDIGO com cor por gravidade ---- */
+  function corKDIGO(kdigo) {
+    const g = (kdigo || "").match(/G\s*([1-5][ab]?)/i);
+    const cod = g ? g[1].toLowerCase() : "";
+    return ({
+      "1": "var(--series-4)",              // G1 — verde (normal)
+      "2": "var(--brand-gold)",            // G2 — âmbar (levemente diminuída)
+      "3a": "var(--sev-3)", "3b": "var(--sev-4)",
+      "4": "var(--sev-4)", "5": "var(--sev-5)",
+    })[cod] || "var(--text-muted)";
+  }
+  function pillKDIGO(kdigo) {
+    if (!kdigo) return null;
+    return h("span", { class: "atero-pill", style: `background:${corKDIGO(kdigo)}` }, `Rim: ${kdigo}`);
   }
 
   /* ---- nível de gravidade em linguagem simples, para o relatório do paciente ---- */
@@ -3119,13 +3155,26 @@ if (!window.CDH_PUBLICO) {
       : l.rastreio_pendente
         ? "Rastreio de aterosclerose PENDENTE — status de prevenção primária × secundária ainda indefinido; risco PREVENT calculado é provisório."
         : "Rastreio de aterosclerose realizado, SEM aterosclerose documentada — paciente em prevenção primária.");
-    p.push(`Sinais e exames na entrada: PA ${l.pas == null ? "—" : fmt0(l.pas) + "/" + fmt0(l.pad)} mmHg (meta ≤ 130/80); `
-      + `LDL ${l.ldl == null ? "—" : fmt0(l.ldl) + " mg/dL"} (meta ≤ 115); HDL ${l.hdl == null ? "—" : fmt0(l.hdl) + " mg/dL"}; `
+    p.push(`Sinais e exames na entrada: PAS ${l.pas == null ? "—" : fmt0(l.pas)} mmHg / PAD ${l.pad == null ? "—" : fmt0(l.pad)} mmHg (meta < 130/80); `
+      + `LDL ${l.ldl == null ? "—" : fmt0(l.ldl) + " mg/dL"} (meta ≤ 115); HDL ${l.hdl == null ? "—" : fmt0(l.hdl) + " mg/dL"} (meta > ${l.sexo === "F" ? "50" : "40"}); `
       + `triglicerídeos ${l.tg == null ? "—" : fmt0(l.tg) + " mg/dL"} (meta < 150); glicose ${l.glicose == null ? "—" : fmt0(l.glicose) + " mg/dL"} (meta < 100); `
-      + `IMC ${l.imc == null ? "—" : fmt(l.imc, 1)} kg/m² (meta < 25); circunferência abdominal ${l.ca == null ? "—" : fmt0(l.ca) + " cm"}.`);
+      + `IMC ${l.imc == null ? "—" : fmt(l.imc, 1)} kg/m² (meta < 25); circunferência abdominal ${l.ca == null ? "—" : fmt0(l.ca) + " cm"} (meta < ${l.sexo === "F" ? "80" : "94"}).`);
+    p.push(`Função renal: creatinina ${l.cr == null ? "—" : fmt(l.cr, 2) + " mg/dL"}; `
+      + `eTFG (CKD-EPI) ${l.etfg_ckdepi == null ? "—" : fmt0(l.etfg_ckdepi) + " mL/min/1,73m²"}`
+      + `${l.kdigo ? ` — estádio KDIGO ${l.kdigo}` : ""}.`);
     p.push(`Diabetes: ${l.dm ? "sim" : "não"}. Hipertensão: ${l.has ? "sim" : "não"}${l.antihas ? " (em anti-hipertensivo)" : ""}. `
       + `Uso de estatina: ${l.estatina ? "sim" : "não"}. Tabagismo: ${l.tabaco === 1 ? "sim" : l.tabaco === 0 ? "não" : "não informado"}.`
-      + `${l.hba1c != null ? ` HbA1c: ${fmt(l.hba1c, 1)}%.` : ""}${l.etfg != null ? ` TFG estimada: ${fmt0(l.etfg)} mL/min/1,73m².` : ""}`);
+      + `${l.hba1c != null ? ` HbA1c: ${fmt(l.hba1c, 1)}%.` : ""}`);
+    const resid = [];
+    if (l.lpa != null) resid.push(`Lp(a) ${l.lpa}`);
+    if (l.apob != null) resid.push(`ApoB ${fmt0(l.apob)} mg/dL`);
+    if (l.apoa != null) resid.push(`ApoA ${fmt0(l.apoa)} mg/dL`);
+    if (l.pcrus != null) resid.push(`PCR-us ${fmt(l.pcrus, 2)} mg/dL`);
+    if (l.cpk != null) resid.push(`CPK ${fmt0(l.cpk)} U/L`);
+    if (l.rac != null) resid.push(`RAC ${fmt(l.rac, 1)} mg/g`);
+    p.push(resid.length
+      ? `Risco cardiovascular residual: ${resid.join("; ")}.`
+      : "Risco cardiovascular residual: marcadores (Lp(a), ApoB, ApoA, PCR-us, CPK, RAC) ainda não realizados.");
     if (l.est_risco) p.push(`Estratificação de risco da ISP: ${l.est_risco.replace(/^\d-/, "")}.`);
     if (l.atero_prevent === 1 && l.cat_dpa) {
       p.push(`Classificação por doença estabelecida (AHA): ${l.cat_dpa.replace(/^\d-/, "")}.`);
@@ -3160,104 +3209,182 @@ if (!window.CDH_PUBLICO) {
       },
     }[nivel];
 
-    const linhaExame = (rotulo, valor, unidade, meta, dentro) => `
+    // meta de LDL conforme a categoria de risco (SBC) — quanto maior o risco, menor o alvo
+    const catRisco = (l.est_risco || "").toUpperCase();
+    const metaLDL = l.atero === 1 || catRisco.includes("EXTREMO") ? 50
+      : catRisco.includes("MUITO ALTO") ? 50
+        : catRisco.includes("ALTO") ? 70
+          : catRisco.includes("INTERMED") ? 100
+            : catRisco.includes("BAIXO") ? 130 : 100;
+    const limCA = l.sexo === "F" ? 80 : 94;
+    const limHDL = l.sexo === "F" ? 50 : 40;
+
+    const linhaExame = (rotulo, valorTxt, meta, dentro) => `
       <tr>
         <td>${rotulo}</td>
-        <td>${valor == null ? "—" : fmt(valor, unidade === "kg/m²" ? 1 : 0) + " " + unidade}</td>
+        <td class="v">${valorTxt}</td>
         <td>${meta}</td>
         <td><span class="status ${dentro === null ? "n" : dentro ? "ok" : "fora"}">
           ${dentro === null ? "não avaliado" : dentro ? "dentro da meta" : "fora da meta"}</span></td>
       </tr>`;
-    const limCA = l.sexo === "F" ? 80 : 94;
-    const limHDL = l.sexo === "F" ? 50 : 40;
+    const v = (x, u, d = 0) => (x == null ? "—" : fmt(x, d) + (u ? " " + u : ""));
     const linhasTabela = [
-      linhaExame("Pressão arterial", l.pas, "mmHg", "até 130/80 mmHg", l.pas == null ? null : l.pas <= 130 && l.pad <= 80),
-      linhaExame("Colesterol ruim (LDL)", l.ldl, "mg/dL", "até 115 mg/dL", l.ldl == null ? null : l.ldl <= 115),
-      linhaExame("Colesterol bom (HDL)", l.hdl, "mg/dL", `acima de ${limHDL} mg/dL`, l.hdl == null ? null : l.hdl > limHDL),
-      linhaExame("Gordura no sangue (triglicerídeos)", l.tg, "mg/dL", "até 150 mg/dL", l.tg == null ? null : l.tg < 150),
-      linhaExame("Açúcar no sangue (glicose)", l.glicose, "mg/dL", "até 100 mg/dL", l.glicose == null ? null : l.glicose < 100),
-      linhaExame("Peso corporal (IMC)", l.imc, "kg/m²", "até 25 kg/m²", l.imc == null ? null : l.imc < 25),
-      linhaExame("Circunferência da cintura", l.ca, "cm", `até ${limCA} cm`, l.ca == null ? null : l.ca < limCA),
+      linhaExame("Pressão máxima (PAS)", v(l.pas, "mmHg"), "até 130 mmHg", l.pas == null ? null : l.pas <= 130),
+      linhaExame("Pressão mínima (PAD)", v(l.pad, "mmHg"), "até 80 mmHg", l.pad == null ? null : l.pad <= 80),
+      linhaExame("Colesterol ruim (LDL)", v(l.ldl, "mg/dL"), `até ${metaLDL} mg/dL`, l.ldl == null ? null : l.ldl <= metaLDL),
+      linhaExame("Colesterol bom (HDL)", v(l.hdl, "mg/dL"), `acima de ${limHDL} mg/dL`, l.hdl == null ? null : l.hdl > limHDL),
+      linhaExame("Gordura no sangue (triglicerídeos)", v(l.tg, "mg/dL"), "até 150 mg/dL", l.tg == null ? null : l.tg < 150),
+      linhaExame("Açúcar no sangue (glicose)", v(l.glicose, "mg/dL"), "até 100 mg/dL", l.glicose == null ? null : l.glicose < 100),
+      l.hba1c != null ? linhaExame("Açúcar médio (HbA1c)", v(l.hba1c, "%", 1), "até 5,7%", l.hba1c < 5.7) : "",
+      linhaExame("Peso corporal (IMC)", v(l.imc, "kg/m²", 1), "até 25 kg/m²", l.imc == null ? null : l.imc < 25),
+      linhaExame("Circunferência da cintura", v(l.ca, "cm"), `até ${limCA} cm`, l.ca == null ? null : l.ca < limCA),
+      linhaExame("Função dos rins (eTFG)", v(l.etfg_ckdepi, "mL/min"), "acima de 60 mL/min", l.etfg_ckdepi == null ? null : l.etfg_ckdepi >= 60),
     ].join("");
 
-    const svgSerie = (chave, cor, unidade) => {
-      const pts = (l.serie || []).map((r) => r[chave]).map((v, i) => ({ i, v })).filter((p) => p.v !== null && p.v !== undefined);
-      if (pts.length < 2) return "";
-      const vals = pts.map((p) => p.v);
-      const min = Math.min(...vals), max = Math.max(...vals);
-      const W = 320, H = 90, pad = 8;
-      const xAt = (i) => pad + (i / (pts.length - 1)) * (W - 2 * pad);
-      const yAt = (v) => H - pad - (max === min ? 0.5 : (v - min) / (max - min)) * (H - 2 * pad);
-      const poly = pts.map((p) => `${xAt(p.i).toFixed(1)},${yAt(p.v).toFixed(1)}`).join(" ");
-      const datas = (l.serie || []).filter((r) => r[chave] !== null && r[chave] !== undefined).map((r) => r.d);
-      return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Evolução de ${unidade}">
-        <polyline points="${poly}" fill="none" stroke="${cor}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
-        ${pts.map((p) => `<circle cx="${xAt(p.i).toFixed(1)}" cy="${yAt(p.v).toFixed(1)}" r="2.6" fill="${cor}"/>`).join("")}
-        <text x="${pad}" y="${H - 1}" font-size="9" fill="#666">${datas[0] || ""}</text>
-        <text x="${W - pad}" y="${H - 1}" font-size="9" fill="#666" text-anchor="end">${datas[datas.length - 1] || ""}</text>
-      </svg>`;
+    // ---- mini-gráficos multi-série (clonam os do detalhe individual) ----
+    const miniChart = (defs, titulo, legenda) => {
+      const built = defs.map((sr) => ({
+        ...sr, pts: (l.serie || []).map((r, i) => ({ i, y: r[sr.chave] })).filter((p) => p.y != null),
+      })).filter((s) => s.pts.length);
+      if (!built.some((s) => s.pts.length >= 2)) return "";
+      const all = built.flatMap((s) => s.pts.map((p) => p.y));
+      const n = (l.serie || []).length;
+      const min = Math.min(...all), max = Math.max(...all);
+      const W = 340, H = 118, pL = 8, pR = 8, pT = 10, pB = 20;
+      const xAt = (i) => pL + (n <= 1 ? 0.5 : i / (n - 1)) * (W - pL - pR);
+      const yAt = (y) => H - pB - (max === min ? 0.5 : (y - min) / (max - min)) * (H - pT - pB);
+      const linhas = built.map((s) => {
+        const poly = s.pts.map((p) => `${xAt(p.i).toFixed(1)},${yAt(p.y).toFixed(1)}`).join(" ");
+        const dots = s.pts.map((p) => `<circle cx="${xAt(p.i).toFixed(1)}" cy="${yAt(p.y).toFixed(1)}" r="2.4" fill="${s.cor}"/>`).join("");
+        return `<polyline points="${poly}" fill="none" stroke="${s.cor}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
+      }).join("");
+      const datas = (l.serie || []).map((r) => r.d);
+      const leg = built.map((s) => `<span class="lg"><i style="background:${s.cor}"></i>${s.nome}</span>`).join("");
+      return `<div class="chart-card">
+        <p class="ct">${titulo}</p>
+        <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${titulo}">
+          ${linhas}
+          <text x="${pL}" y="${H - 4}" font-size="9" fill="#888">${datas[0] || ""}</text>
+          <text x="${W - pR}" y="${H - 4}" font-size="9" fill="#888" text-anchor="end">${datas[datas.length - 1] || ""}</text>
+        </svg>
+        <div class="legend">${leg}</div>
+        <p class="cs">${legenda}</p>
+      </div>`;
     };
-    const graf1 = svgSerie("pas", "#C8102E", "pressão arterial (mmHg)");
-    const graf2 = svgSerie("imc", "#2a78d6", "IMC (kg/m²)");
+    const charts = [
+      miniChart([{ chave: "pas", cor: "#C8102E", nome: "Máxima (PAS)" }, { chave: "pad", cor: "#2a78d6", nome: "Mínima (PAD)" }],
+        "Pressão arterial", "Meta: máxima até 130 e mínima até 80 mmHg."),
+      miniChart([{ chave: "ldl", cor: "#C8102E", nome: "LDL" }, { chave: "hdl", cor: "#1baf7a", nome: "HDL" }, { chave: "tg", cor: "#B8860B", nome: "Triglicerídeos" }],
+        "Colesterol e gorduras", `Meta do LDL para o seu caso: até ${metaLDL} mg/dL.`),
+      miniChart([{ chave: "gli", cor: "#4a3aa7", nome: "Glicose" }],
+        "Açúcar no sangue", "Meta: até 100 mg/dL em jejum."),
+      miniChart([{ chave: "imc", cor: "#2a78d6", nome: "IMC" }],
+        "Peso corporal (IMC)", "Meta: até 25 kg/m²."),
+      miniChart([{ chave: "etfg", cor: "#1baf7a", nome: "eTFG" }],
+        "Função dos rins", "Acima de 60 é o esperado."),
+    ].filter(Boolean).join("");
+
+    // ---- risco residual (linguagem simples) ----
+    const residTxt = [];
+    if (l.lpa != null) residTxt.push(`Lipoproteína(a): ${l.lpa}`);
+    if (l.apob != null) residTxt.push(`ApoB: ${fmt0(l.apob)} mg/dL`);
+    if (l.apoa != null) residTxt.push(`ApoA: ${fmt0(l.apoa)} mg/dL`);
+    if (l.pcrus != null) residTxt.push(`Inflamação (PCR): ${fmt(l.pcrus, 2)} mg/dL`);
+    if (l.cpk != null) residTxt.push(`Enzima muscular (CPK): ${fmt0(l.cpk)} U/L`);
+    if (l.rac != null) residTxt.push(`Proteína na urina (RAC): ${fmt(l.rac, 1)} mg/g`);
+    const residualHtml = residTxt.length
+      ? `<h2>Exames complementares do coração</h2>
+         <p>Estes exames ajudam a medir o risco além do colesterol comum:</p>
+         <ul class="resid">${residTxt.map((t) => `<li>${t}</li>`).join("")}</ul>`
+      : `<div class="aviso">Há <strong>exames complementares do coração</strong> (como Lp(a), ApoB e proteína C reativa)
+         que ainda não foram realizados. Converse com a equipe sobre solicitá-los.</div>`;
 
     const pendenteHtml = l.rastreio_pendente
-      ? `<div class="aviso">Você ainda precisa realizar um <strong>exame de avaliação das artérias</strong>
-          (ultrassom ou exame de imagem do coração) — é importante agendá-lo e realizá-lo assim que possível.</div>`
+      ? `<div class="aviso"><strong>Exame pendente:</strong> você ainda precisa realizar um <strong>exame de avaliação das artérias</strong>
+          (ultrassom das carótidas ou escore de cálcio do coração) — agende-o e realize-o assim que possível.</div>`
+      : "";
+    const renalHtml = (l.kdigo && !/G1/i.test(l.kdigo))
+      ? `<div class="aviso"><strong>Rins:</strong> seus exames indicam função renal ${/G3|G4|G5/i.test(l.kdigo) ? "reduzida" : "levemente reduzida"}
+         (${l.kdigo}). Mantenha a pressão e o açúcar controlados e faça o acompanhamento indicado.</div>`
       : "";
     const tratamentoBits = [];
-    if (l.antihas) tratamentoBits.push("medicação para a pressão");
-    if (l.estatina) tratamentoBits.push("medicação para o colesterol");
+    if (l.antihas) tratamentoBits.push("remédio para a pressão");
+    if (l.estatina) tratamentoBits.push("remédio para o colesterol");
     const tratamentoHtml = tratamentoBits.length
-      ? `<p>Você já está em acompanhamento e faz uso de <strong>${tratamentoBits.join(" e ")}</strong>, de acordo com o seu nível de risco.
-         É fundamental manter o uso correto, nos horários e doses indicados, e <strong>nunca interromper por conta própria</strong>.</p>`
-      : `<p>É fundamental seguir as orientações de tratamento e acompanhamento passadas pela equipe de saúde, de acordo com o seu nível de risco.</p>`;
+      ? `<p>Você já faz uso de <strong>${tratamentoBits.join(" e ")}</strong>, de acordo com o seu nível de risco.
+         Mantenha o uso correto, nos horários e doses indicados, e <strong>nunca interrompa por conta própria</strong>.</p>`
+      : `<p>Siga as orientações de tratamento e acompanhamento passadas pela equipe de saúde, de acordo com o seu nível de risco.</p>`;
 
     const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
       <title>Relatório para o paciente — ${l.nome}</title>
       <style>
-        body{font:15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;color:#1B1B1D;max-width:720px;margin:24px auto;padding:0 20px}
-        h1{font-size:20px;color:#C8102E;margin:0 0 2px} h2{font-size:15px;margin:26px 0 8px}
-        .sub{color:#5b5b5f;font-size:13px;margin:0 0 18px}
-        .selo{display:inline-block;padding:6px 14px;border-radius:999px;color:#fff;font-weight:700;font-size:13px;background:${TOM.cor}}
-        .intro{margin:14px 0;padding:14px 16px;background:#f2eee5;border-left:4px solid ${TOM.cor};border-radius:0 8px 8px 0}
-        table{border-collapse:collapse;width:100%;margin:8px 0 4px;font-size:13.5px}
-        th,td{padding:7px 9px;text-align:left;border-bottom:1px solid #ddd}
-        th{background:#f2eee5}
-        .status{padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;color:#fff}
+        *{box-sizing:border-box}
+        body{font:15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;color:#1B1B1D;background:#f4f2ec;margin:0;padding:24px 14px}
+        .page{max-width:760px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 6px 30px rgba(0,0,0,.09)}
+        .hero{background:linear-gradient(135deg,#1B1B1D 0%,#5a1016 55%,${TOM.cor} 100%);color:#fff;padding:26px 26px 22px}
+        .hero .kick{font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.85;margin:0}
+        .hero h1{font-size:24px;margin:4px 0 2px;font-weight:800}
+        .hero .who{font-size:14px;opacity:.92;margin:8px 0 0}
+        .hero .selo{display:inline-block;margin-top:14px;padding:7px 16px;border-radius:999px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);color:#fff;font-weight:700;font-size:13px}
+        .body{padding:22px 26px 28px}
+        h2{font-size:16px;margin:26px 0 10px;padding-bottom:6px;border-bottom:2px solid ${TOM.cor}}
+        .intro{margin:0 0 6px;padding:16px 18px;background:#f7f4ee;border-left:4px solid ${TOM.cor};border-radius:0 10px 10px 0;font-size:14.5px}
+        .aviso{margin:12px 0;padding:13px 16px;background:#fff7e0;border-left:4px solid #B8860B;border-radius:0 10px 10px 0;font-size:14px}
+        table{border-collapse:collapse;width:100%;margin:6px 0;font-size:14px}
+        th,td{padding:9px 10px;text-align:left;border-bottom:1px solid #e6e2d8}
+        th{background:#f4f0e8;font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;color:#6b6b6b}
+        td.v{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+        .status{display:inline-block;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:700;color:#fff;white-space:nowrap}
         .status.ok{background:#1baf7a} .status.fora{background:#C8102E} .status.n{background:#9a9a9a}
-        .aviso{margin:14px 0;padding:12px 14px;background:#fff7e0;border-left:4px solid #B8860B;border-radius:0 8px 8px 0}
-        .charts{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0}
-        .charts div{flex:1;min-width:260px}
-        .charts p{font-size:12px;color:#5b5b5f;margin:4px 0 0}
-        .print-bar{margin:18px 0}
-        button{font:inherit;padding:8px 16px;border-radius:999px;border:1px solid #C8102E;background:#C8102E;color:#fff;cursor:pointer}
-        footer{margin-top:26px;font-size:11.5px;color:#8a8a8a}
-        @media print { .print-bar{display:none} }
+        .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:6px}
+        .chart-card{border:1px solid #e6e2d8;border-radius:12px;padding:12px 14px 10px;background:#fcfbf8}
+        .chart-card .ct{font-size:13.5px;font-weight:700;margin:0 0 6px}
+        .chart-card .cs{font-size:11.5px;color:#6b6b6b;margin:6px 0 0}
+        .legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}
+        .legend .lg{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#4a4a4a}
+        .legend .lg i{width:11px;height:11px;border-radius:3px;display:inline-block}
+        ul.resid{margin:8px 0 0;padding-left:20px} ul.resid li{margin:3px 0}
+        .steps{list-style:none;padding:0;margin:8px 0 0}
+        .steps li{position:relative;padding:9px 0 9px 30px;border-bottom:1px solid #f0ece2;font-size:14.5px}
+        .steps li:before{content:"✓";position:absolute;left:0;top:8px;width:20px;height:20px;border-radius:50%;background:${TOM.cor};color:#fff;font-size:12px;font-weight:700;text-align:center;line-height:20px}
+        .print-bar{margin:22px 0 4px}
+        button{font:inherit;font-weight:700;padding:11px 20px;border-radius:999px;border:none;background:${TOM.cor};color:#fff;cursor:pointer}
+        footer{margin-top:20px;font-size:11.5px;color:#8a8a8a;line-height:1.5}
+        @media print { body{background:#fff;padding:0} .page{box-shadow:none} .print-bar{display:none} }
       </style></head><body>
-      <h1>Programa Coração de Herói</h1>
-      <p class="sub">1ª Policlínica — Corpo de Bombeiros Militar do Estado do Rio de Janeiro (CBMERJ)</p>
-      <p><strong>Paciente:</strong> ${l.nome}</p>
-      <p><span class="selo">${TOM.selo}</span></p>
-      <div class="intro"><p>Você participa do <strong>Programa Coração de Herói</strong>, um acompanhamento contínuo
-        (longitudinal) dos fatores que influenciam a saúde do coração — como pressão arterial, colesterol, açúcar no
-        sangue e peso. ${TOM.texto}</p></div>
-      ${pendenteHtml}
-      <h2>Seus resultados na última avaliação (${l.data})</h2>
-      <table><thead><tr><th>Exame</th><th>Seu valor</th><th>Meta recomendada</th><th>Situação</th></tr></thead>
-        <tbody>${linhasTabela}</tbody></table>
-      <h2>Como isso mudou ao longo do tempo</h2>
-      <div class="charts">
-        ${graf1 ? `<div>${graf1}<p>Pressão arterial ao longo das suas avaliações.</p></div>` : ""}
-        ${graf2 ? `<div>${graf2}<p>Índice de massa corporal (IMC) ao longo das suas avaliações.</p></div>` : ""}
-        ${!graf1 && !graf2 ? "<p>Ainda não há avaliações suficientes para montar o gráfico de evolução.</p>" : ""}
+      <div class="page">
+        <div class="hero">
+          <p class="kick">CBMERJ · 1ª Policlínica — Programa Coração de Herói</p>
+          <h1>Seu boletim do coração</h1>
+          <p class="who"><strong>${l.nome}</strong> · avaliação de ${l.data}</p>
+          <span class="selo">${TOM.selo}</span>
+        </div>
+        <div class="body">
+          <div class="intro">Você participa do <strong>Programa Coração de Herói</strong>, um acompanhamento contínuo
+            dos fatores que influenciam a saúde do seu coração — pressão, colesterol, açúcar no sangue, peso e rins.
+            ${TOM.texto}</div>
+          ${pendenteHtml}${renalHtml}
+          <h2>Seus resultados nesta avaliação</h2>
+          <table><thead><tr><th>O que foi medido</th><th>Seu valor</th><th>Meta para você</th><th>Situação</th></tr></thead>
+            <tbody>${linhasTabela}</tbody></table>
+          <h2>Como você evoluiu ao longo do tempo</h2>
+          ${charts ? `<div class="charts">${charts}</div>` : "<p>Ainda não há avaliações suficientes para montar os gráficos de evolução.</p>"}
+          ${residualHtml}
+          <h2>O que fazer agora</h2>
+          ${tratamentoHtml}
+          <ul class="steps">
+            <li>Realize os exames solicitados nas datas combinadas.</li>
+            <li>Compareça às consultas de retorno para a equipe acompanhar sua evolução.</li>
+            <li>Use os medicamentos exatamente como orientado, sem interromper por conta própria.</li>
+            <li>Cuide do dia a dia: alimentação, atividade física e sono ajudam todos os números acima.</li>
+          </ul>
+          <div class="print-bar"><button onclick="window.print()">🖨 Imprimir / salvar em PDF</button></div>
+          <footer>Documento informativo gerado a partir da sua inspeção de saúde periódica. As metas seguem as
+            recomendações da Sociedade Brasileira de Cardiologia e podem variar conforme o seu nível de risco.
+            Não substitui a orientação da equipe médica — em caso de dúvida, procure a 1ª Policlínica.</footer>
+        </div>
       </div>
-      <h2>O que fazer agora</h2>
-      ${tratamentoHtml}
-      <p>Realize os exames solicitados nas datas indicadas e compareça às consultas de retorno — é assim que a
-        equipe consegue acompanhar sua evolução e ajustar o tratamento quando necessário.</p>
-      <div class="print-bar"><button onclick="window.print()">🖨 Imprimir / salvar em PDF</button></div>
-      <footer>Documento informativo gerado a partir da inspeção de saúde periódica. Não substitui a orientação
-        da equipe médica — em caso de dúvida, procure a 1ª Policlínica.</footer>
       </body></html>`;
 
     const w = window.open("", "_blank");
@@ -3274,11 +3401,13 @@ if (!window.CDH_PUBLICO) {
     // ---- visão Tabela ----
     const cols = [["d", "Inspeção"], ["idade", "Idade"], ["pas", "PAS"], ["pad", "PAD"],
     ["peso", "Peso"], ["imc", "IMC"], ["ca", "Cintura"], ["ct", "CT"], ["ldl", "LDL"],
-    ["hdl", "HDL"], ["tg", "TG"], ["gli", "Glicose"], ["au", "Ác. úrico"], ["ecg", "ECG"]];
+    ["hdl", "HDL"], ["tg", "TG"], ["gli", "Glicose"], ["au", "Ác. úrico"],
+    ["cr", "Creatinina"], ["etfg", "eTFG"], ["ecg", "ECG"]];
+    const casasDe = (k) => (k === "imc" ? 1 : k === "cr" ? 2 : 0);
     painelTabela.appendChild(h("div", { class: "data-table" },
       tabela(cols.map((c) => c[1]), S.map((r) => cols.map(([k]) =>
         r[k] === null || r[k] === undefined ? "—"
-          : typeof r[k] === "number" ? fmt(r[k], k === "imc" ? 1 : 0)
+          : typeof r[k] === "number" ? fmt(r[k], casasDe(k))
             : k === "ecg" ? (r[k] === "nan" ? "—" : r[k]) : r[k])))));
 
     // ---- visão Gráficos ----
@@ -3304,6 +3433,8 @@ if (!window.CDH_PUBLICO) {
         "Eixo em escala logarítmica — as duas séries têm ordens de grandeza diferentes. Metas: glicemia < 100 · ácido úrico ≤ 7,0.", true),
       grafico("Índice de massa corporal", [serie("imc", "IMC", 0)], "kg/m²", "Meta: < 25 kg/m²."),
       grafico("Circunferência abdominal", [serie("ca", "Cintura", 0)], "cm", `Limiar do sexo ${l.sexo === "F" ? "feminino: 80 cm" : "masculino: 94 cm"}.`),
+      grafico("Função renal (eTFG CKD-EPI)", [serie("etfg", "eTFG", 3)], "mL/min/1,73m²",
+        "Faixas KDIGO: ≥ 90 normal (G1) · 60–89 levemente reduzida (G2) · 45–59 G3a · 30–44 G3b · < 30 avançada."),
     ].filter(Boolean);
     painelGraf.appendChild(h("div", { class: "grid g2" }, gs));
 
@@ -3333,8 +3464,26 @@ if (!window.CDH_PUBLICO) {
     if (l.patente) risco.push(`${l.patente}${l.posto ? " · " + l.posto : ""}`);
     if (l.tabaco === 1) risco.push("tabagista");
     if (l.hba1c != null) risco.push(`HbA1c ${fmt(l.hba1c, 1)}%`);
-    if (l.etfg != null) risco.push(`TFG ${fmt0(l.etfg)} mL/min`);
-    if (l.uacr != null) risco.push(`RAC ${fmt(l.uacr, 1)} mg/g`);
+
+    // ---- bloco de risco cardiovascular residual (rastreio recente) ----
+    const residuais = [
+      { nome: "Lp(a)", valor: l.lpa != null ? String(l.lpa) : null, ref: "alto ≥ 50 mg/dL (≈ 125 nmol/L)" },
+      { nome: "ApoB", valor: l.apob != null ? fmt0(l.apob) + " mg/dL" : null, ref: "atenção > 100 · alto > 130" },
+      { nome: "ApoA", valor: l.apoa != null ? fmt0(l.apoa) + " mg/dL" : null, ref: "valor baixo é desfavorável" },
+      { nome: "PCR-us", valor: l.pcrus != null ? fmt(l.pcrus, 2) + " mg/dL" : null, ref: "inflamação se > 0,3 mg/dL" },
+      { nome: "CPK", valor: l.cpk != null ? fmt0(l.cpk) + " U/L" : null, ref: "muscular · vigiar com estatina" },
+      { nome: "RAC", valor: l.rac != null ? fmt(l.rac, 1) + " mg/g" : null, ref: "≥ 30 microalbuminúria" },
+    ];
+    const feitos = residuais.filter((x) => x.valor != null).length;
+    const blocoResidual = h("div", { style: "margin-top:14px" },
+      h("p", { class: "fig-title" }, "Risco cardiovascular residual"),
+      h("p", { class: "fig-sub" }, `Marcadores do rastreio mais recente — ${feitos} de ${residuais.length} realizados.`),
+      h("div", { class: "residual-grid" }, residuais.map((x) => h("div", {
+        class: "residual-item" + (x.valor == null ? " vazio" : ""),
+      },
+        h("span", { class: "ri-nome" }, x.nome),
+        h("span", { class: "ri-valor" }, x.valor == null ? "não realizado" : x.valor),
+        h("span", { class: "ri-ref" }, x.ref)))));
 
     // ---- resumo clínico copiável (equipe médica) ----
     const texto = textoClinico(l);
@@ -3367,11 +3516,12 @@ if (!window.CDH_PUBLICO) {
     return h("div", { class: "rank-detail", hidden: "" },
       h("div", { class: "mot-list" },
         h("span", { class: "atero-pill", style: `background:${flagAtero(l).cor}` }, `${flagAtero(l).icone} ${flagAtero(l).texto}`),
+        pillKDIGO(l.kdigo),
         risco.map((m) => h("span", { class: "mot", style: "border-color:color-mix(in srgb,var(--brand-gold) 40%,transparent);background:color-mix(in srgb,var(--brand-gold) 10%,var(--surface-1))" }, m))),
       h("div", { class: "mot-list" }, (l.motivos || []).map((m) => h("span", { class: "mot" }, m))),
       h("div", { class: "tabs", role: "tablist" }, tabTab, tabGraf),
       painelTabela, painelGraf,
-      blocoClinico, blocoPaciente);
+      blocoResidual, blocoClinico, blocoPaciente);
   }
 
   const lista = h("div", { style: "margin-top:16px" });
@@ -3441,6 +3591,24 @@ if (!window.CDH_PUBLICO) {
     h("div", { class: "tile gold" }, h("p", { class: "tile-label" }, "Sem HbA1c registrada"),
       h("div", { class: "tile-value" }, fmt0(semHba1c), h("small", {}, `de ${fmt0(D.prevent.n_total)}`)),
       h("p", { class: "tile-note" }, `${pct(100 * semHba1c / D.prevent.n_total, 0)} da coorte sem hemoglobina glicada — exame que refina a estimativa de risco PREVENT e detecta pré-diabetes/diabetes ainda não diagnosticado.`))));
+
+  // ---- cobertura dos exames de risco cardiovascular residual ----
+  if (R.exames) {
+    const EX = R.exames;
+    s.appendChild(h("div", { style: "margin-top:16px" },
+      h("p", { class: "fig-title", style: "margin:0 0 2px" }, "Cobertura dos exames de risco residual"),
+      h("p", { class: "fig-sub", style: "margin:0 0 12px" },
+        "Marcadores de risco cardiovascular residual e função renal já realizados na coorte — muitos militares ainda não fizeram, e a lacuna é a próxima fila de solicitação."),
+      h("div", { class: "grid g4" }, EX.itens.map((it) => {
+        const p = 100 * it.n / EX.n;
+        const cor = p >= 80 ? "var(--series-4)" : p >= 40 ? "var(--brand-gold)" : "var(--sev-3)";
+        return h("div", { class: "tile", style: `--tile-accent:${cor}` },
+          h("p", { class: "tile-label" }, it.nome),
+          h("div", { class: "tile-value" }, fmt0(it.n), h("small", {}, `de ${fmt0(EX.n)}`)),
+          h("div", { class: "cov-bar" }, h("div", { class: "cov-fill", style: `width:${p.toFixed(0)}%;background:${cor}` })),
+          h("p", { class: "tile-note" }, `${pct(p, 0)} realizados · ${fmt0(EX.n - it.n)} pendentes`));
+      }))));
+  }
 
   const maisGrave = top[0];
   const tratadosSemControle = R.linhas.filter((l) => (l.antihas && l.pas !== null && (l.pas > 130 || l.pad > 80)) || (l.estatina && l.ldl !== null && l.ldl > 115)).length;
