@@ -480,6 +480,22 @@ footer {
   border: 1px solid color-mix(in srgb, var(--brand-red) 26%, transparent); color: var(--text-secondary);
 }
 
+/* flag de rastreio de aterosclerose (3 estados) */
+.atero-pill {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  font-size: 11.5px; font-weight: 700; color: #fff;
+  padding: 3px 10px; border-radius: 999px;
+}
+
+/* resumo clínico copiável (equipe médica) */
+.clin-copy {
+  width: 100%; box-sizing: border-box; resize: vertical; margin-top: 6px;
+  font: inherit; font-size: 13px; line-height: 1.5; color: var(--text-secondary);
+  background: var(--surface-1); border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+}
+.clin-copy:focus-visible { outline: 2px solid var(--brand-red); outline-offset: 2px; }
+
 /* bullets das leituras */
 .analysis ul { margin: 10px 0 0; padding-left: 0; list-style: none; }
 .analysis li {
@@ -3044,7 +3060,7 @@ if (!window.CDH_PUBLICO) {
      maior vale 3 — e <strong>estar tratado sem atingir a meta soma 1 ponto extra</strong>, porque é a situação que mais demanda
      mudança de conduta.`);
 
-  s.appendChild(h("div", { class: "grid g4" },
+  s.appendChild(h("div", { class: "grid g3" },
     h("div", { class: "tile" }, h("p", { class: "tile-label" }, "Escore máximo observado"),
       h("div", { class: "tile-value" }, fmt0(R.escore_max), h("small", {}, "pontos")),
       h("p", { class: "tile-note" }, `Média da coorte: ${fmt(R.escore_medio, 1)} pontos`)),
@@ -3053,10 +3069,7 @@ if (!window.CDH_PUBLICO) {
       h("p", { class: "tile-note" }, "Pontos necessários para entrar na lista")),
     h("div", { class: "tile" }, h("p", { class: "tile-label" }, "Obesidade no topo 15"),
       h("div", { class: "tile-value" }, fmt0(top.filter((l) => l.imc !== null && l.imc >= 30).length)),
-      h("p", { class: "tile-note" }, `${fmt0(top.filter((l) => l.atero === 1).length)} com aterosclerose · ${fmt0(top.filter((l) => l.dm === 1).length)} com diabetes`)),
-    h("div", { class: "tile gold" }, h("p", { class: "tile-label" }, "Rastreio de aterosclerose pendente"),
-      h("div", { class: "tile-value" }, fmt0(PEND.n)),
-      h("p", { class: "tile-note" }, `${pct(PEND.pct, 0)} da coorte · ${fmt0(PEND.acima_media)} com escore acima da média`))));
+      h("p", { class: "tile-note" }, `${fmt0(top.filter((l) => l.atero === 1).length)} com aterosclerose · ${fmt0(top.filter((l) => l.dm === 1).length)} com diabetes`))));
 
   const tabelaCompleta = () => tabela(
     ["#", "Militar", "RG", "Sexo", "Idade", "Escore", "PA", "IMC", "Cintura", "LDL", "Glicose", "TG", "HDL", "DM", "Aterosc.", "ECG", "Carga", "Principais motivos"],
@@ -3075,6 +3088,183 @@ if (!window.CDH_PUBLICO) {
 
   /* ---------- lista clicável com detalhe individual inline ---------- */
   const corDoEscore = (e) => C.SEV(e >= R.escore_max - 1 ? 4 : e >= R.corte_top15 + 1 ? 3 : 2);
+
+  /* ---- flag de 3 estados do rastreio de aterosclerose ---- */
+  function flagAtero(l) {
+    if (l.atero === 1) return { texto: "Aterosclerose documentada", cor: "var(--sev-4)", icone: "●" };
+    if (l.rastreio_pendente) return { texto: "Aguardando exame de rastreio", cor: "var(--brand-gold)", icone: "⚠" };
+    return { texto: "Rastreado — sem aterosclerose", cor: "var(--series-4)", icone: "✓" };
+  }
+  function pillAtero(l) {
+    const f = flagAtero(l);
+    return h("span", { class: "atero-pill", style: `background:${f.cor}` }, `${f.icone} ${f.texto}`);
+  }
+
+  /* ---- nível de gravidade em linguagem simples, para o relatório do paciente ---- */
+  function nivelPaciente(l) {
+    if (l.atero === 1 || l.escore >= R.escore_max - 1) return "critico";
+    if (l.rastreio_pendente || l.escore >= R.corte_top15) return "atencao";
+    return "estavel";
+  }
+
+  /* ---- resumo clínico em texto corrido, para copiar e colar em relatório externo ---- */
+  function textoClinico(l) {
+    const p = [];
+    p.push(`Militar ${l.nome} (RG ${l.rg}), sexo ${l.sexo === "F" ? "feminino" : "masculino"}, `
+      + `${l.idade == null ? "idade não informada" : fmt0(l.idade) + " anos"}`
+      + `${l.patente ? `, ${l.patente}${l.posto ? " / " + l.posto : ""}` : ""}. `
+      + `Inspeção de entrada no programa Coração de Herói em ${l.data}.`);
+    p.push(l.atero === 1
+      ? "Aterosclerose DOCUMENTADA — paciente em prevenção secundária; as equações de risco PREVENT não se aplicam e a estratificação segue por doença estabelecida."
+      : l.rastreio_pendente
+        ? "Rastreio de aterosclerose PENDENTE — status de prevenção primária × secundária ainda indefinido; risco PREVENT calculado é provisório."
+        : "Rastreio de aterosclerose realizado, SEM aterosclerose documentada — paciente em prevenção primária.");
+    p.push(`Sinais e exames na entrada: PA ${l.pas == null ? "—" : fmt0(l.pas) + "/" + fmt0(l.pad)} mmHg (meta ≤ 130/80); `
+      + `LDL ${l.ldl == null ? "—" : fmt0(l.ldl) + " mg/dL"} (meta ≤ 115); HDL ${l.hdl == null ? "—" : fmt0(l.hdl) + " mg/dL"}; `
+      + `triglicerídeos ${l.tg == null ? "—" : fmt0(l.tg) + " mg/dL"} (meta < 150); glicose ${l.glicose == null ? "—" : fmt0(l.glicose) + " mg/dL"} (meta < 100); `
+      + `IMC ${l.imc == null ? "—" : fmt(l.imc, 1)} kg/m² (meta < 25); circunferência abdominal ${l.ca == null ? "—" : fmt0(l.ca) + " cm"}.`);
+    p.push(`Diabetes: ${l.dm ? "sim" : "não"}. Hipertensão: ${l.has ? "sim" : "não"}${l.antihas ? " (em anti-hipertensivo)" : ""}. `
+      + `Uso de estatina: ${l.estatina ? "sim" : "não"}. Tabagismo: ${l.tabaco === 1 ? "sim" : l.tabaco === 0 ? "não" : "não informado"}.`
+      + `${l.hba1c != null ? ` HbA1c: ${fmt(l.hba1c, 1)}%.` : ""}${l.etfg != null ? ` TFG estimada: ${fmt0(l.etfg)} mL/min/1,73m².` : ""}`);
+    if (l.est_risco) p.push(`Estratificação de risco da ISP: ${l.est_risco.replace(/^\d-/, "")}.`);
+    if (l.atero_prevent === 1 && l.cat_dpa) {
+      p.push(`Classificação por doença estabelecida (AHA): ${l.cat_dpa.replace(/^\d-/, "")}.`);
+    } else if (l.cvd10 != null) {
+      p.push(`Risco PREVENT (AHA 2024): ${pct(l.cvd10, 1)} em 10 anos`
+        + `${l.cvd30 != null ? `, ${pct(l.cvd30, 1)} em 30 anos` : ""}`
+        + `${l.prevent_cat ? ` — categoria ${l.prevent_cat}` : ""}.`);
+    }
+    p.push(`Escore interno de gravidade: ${l.escore} pontos (posição #${l.posicao} de ${R.n}); `
+      + `principais motivos: ${(l.motivos || []).join("; ") || "—"}.`);
+    return p.join(" ");
+  }
+
+  /* ---- relatório impresso para o paciente: linguagem simples, sem jargão ---- */
+  function abrirRelatorioPaciente(l) {
+    const nivel = nivelPaciente(l);
+    const TOM = {
+      critico: {
+        selo: "Atenção prioritária", cor: "#B00E2B",
+        texto: "Seus exames mostram fatores de risco importantes para o coração. É fundamental agir agora: "
+          + "siga à risca as orientações da equipe de saúde, não falte às consultas e realize os exames pedidos o quanto antes.",
+      },
+      atencao: {
+        selo: "Atenção", cor: "#B8860B",
+        texto: "Seus exames mostram alguns pontos que precisam de atenção. É importante completar os exames pendentes "
+          + "e seguir as orientações da equipe de saúde para reduzir seus riscos.",
+      },
+      estavel: {
+        selo: "Sob controle", cor: "#1baf7a",
+        texto: "Seus exames mostram que a maior parte dos seus indicadores está dentro ou perto do recomendado. "
+          + "Continue seguindo as orientações da equipe para manter esse resultado.",
+      },
+    }[nivel];
+
+    const linhaExame = (rotulo, valor, unidade, meta, dentro) => `
+      <tr>
+        <td>${rotulo}</td>
+        <td>${valor == null ? "—" : fmt(valor, unidade === "kg/m²" ? 1 : 0) + " " + unidade}</td>
+        <td>${meta}</td>
+        <td><span class="status ${dentro === null ? "n" : dentro ? "ok" : "fora"}">
+          ${dentro === null ? "não avaliado" : dentro ? "dentro da meta" : "fora da meta"}</span></td>
+      </tr>`;
+    const limCA = l.sexo === "F" ? 80 : 94;
+    const limHDL = l.sexo === "F" ? 50 : 40;
+    const linhasTabela = [
+      linhaExame("Pressão arterial", l.pas, "mmHg", "até 130/80 mmHg", l.pas == null ? null : l.pas <= 130 && l.pad <= 80),
+      linhaExame("Colesterol ruim (LDL)", l.ldl, "mg/dL", "até 115 mg/dL", l.ldl == null ? null : l.ldl <= 115),
+      linhaExame("Colesterol bom (HDL)", l.hdl, "mg/dL", `acima de ${limHDL} mg/dL`, l.hdl == null ? null : l.hdl > limHDL),
+      linhaExame("Gordura no sangue (triglicerídeos)", l.tg, "mg/dL", "até 150 mg/dL", l.tg == null ? null : l.tg < 150),
+      linhaExame("Açúcar no sangue (glicose)", l.glicose, "mg/dL", "até 100 mg/dL", l.glicose == null ? null : l.glicose < 100),
+      linhaExame("Peso corporal (IMC)", l.imc, "kg/m²", "até 25 kg/m²", l.imc == null ? null : l.imc < 25),
+      linhaExame("Circunferência da cintura", l.ca, "cm", `até ${limCA} cm`, l.ca == null ? null : l.ca < limCA),
+    ].join("");
+
+    const svgSerie = (chave, cor, unidade) => {
+      const pts = (l.serie || []).map((r) => r[chave]).map((v, i) => ({ i, v })).filter((p) => p.v !== null && p.v !== undefined);
+      if (pts.length < 2) return "";
+      const vals = pts.map((p) => p.v);
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const W = 320, H = 90, pad = 8;
+      const xAt = (i) => pad + (i / (pts.length - 1)) * (W - 2 * pad);
+      const yAt = (v) => H - pad - (max === min ? 0.5 : (v - min) / (max - min)) * (H - 2 * pad);
+      const poly = pts.map((p) => `${xAt(p.i).toFixed(1)},${yAt(p.v).toFixed(1)}`).join(" ");
+      const datas = (l.serie || []).filter((r) => r[chave] !== null && r[chave] !== undefined).map((r) => r.d);
+      return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Evolução de ${unidade}">
+        <polyline points="${poly}" fill="none" stroke="${cor}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+        ${pts.map((p) => `<circle cx="${xAt(p.i).toFixed(1)}" cy="${yAt(p.v).toFixed(1)}" r="2.6" fill="${cor}"/>`).join("")}
+        <text x="${pad}" y="${H - 1}" font-size="9" fill="#666">${datas[0] || ""}</text>
+        <text x="${W - pad}" y="${H - 1}" font-size="9" fill="#666" text-anchor="end">${datas[datas.length - 1] || ""}</text>
+      </svg>`;
+    };
+    const graf1 = svgSerie("pas", "#C8102E", "pressão arterial (mmHg)");
+    const graf2 = svgSerie("imc", "#2a78d6", "IMC (kg/m²)");
+
+    const pendenteHtml = l.rastreio_pendente
+      ? `<div class="aviso">Você ainda precisa realizar um <strong>exame de avaliação das artérias</strong>
+          (ultrassom ou exame de imagem do coração) — é importante agendá-lo e realizá-lo assim que possível.</div>`
+      : "";
+    const tratamentoBits = [];
+    if (l.antihas) tratamentoBits.push("medicação para a pressão");
+    if (l.estatina) tratamentoBits.push("medicação para o colesterol");
+    const tratamentoHtml = tratamentoBits.length
+      ? `<p>Você já está em acompanhamento e faz uso de <strong>${tratamentoBits.join(" e ")}</strong>, de acordo com o seu nível de risco.
+         É fundamental manter o uso correto, nos horários e doses indicados, e <strong>nunca interromper por conta própria</strong>.</p>`
+      : `<p>É fundamental seguir as orientações de tratamento e acompanhamento passadas pela equipe de saúde, de acordo com o seu nível de risco.</p>`;
+
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+      <title>Relatório para o paciente — ${l.nome}</title>
+      <style>
+        body{font:15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;color:#1B1B1D;max-width:720px;margin:24px auto;padding:0 20px}
+        h1{font-size:20px;color:#C8102E;margin:0 0 2px} h2{font-size:15px;margin:26px 0 8px}
+        .sub{color:#5b5b5f;font-size:13px;margin:0 0 18px}
+        .selo{display:inline-block;padding:6px 14px;border-radius:999px;color:#fff;font-weight:700;font-size:13px;background:${TOM.cor}}
+        .intro{margin:14px 0;padding:14px 16px;background:#f2eee5;border-left:4px solid ${TOM.cor};border-radius:0 8px 8px 0}
+        table{border-collapse:collapse;width:100%;margin:8px 0 4px;font-size:13.5px}
+        th,td{padding:7px 9px;text-align:left;border-bottom:1px solid #ddd}
+        th{background:#f2eee5}
+        .status{padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;color:#fff}
+        .status.ok{background:#1baf7a} .status.fora{background:#C8102E} .status.n{background:#9a9a9a}
+        .aviso{margin:14px 0;padding:12px 14px;background:#fff7e0;border-left:4px solid #B8860B;border-radius:0 8px 8px 0}
+        .charts{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0}
+        .charts div{flex:1;min-width:260px}
+        .charts p{font-size:12px;color:#5b5b5f;margin:4px 0 0}
+        .print-bar{margin:18px 0}
+        button{font:inherit;padding:8px 16px;border-radius:999px;border:1px solid #C8102E;background:#C8102E;color:#fff;cursor:pointer}
+        footer{margin-top:26px;font-size:11.5px;color:#8a8a8a}
+        @media print { .print-bar{display:none} }
+      </style></head><body>
+      <h1>Programa Coração de Herói</h1>
+      <p class="sub">1ª Policlínica — Corpo de Bombeiros Militar do Estado do Rio de Janeiro (CBMERJ)</p>
+      <p><strong>Paciente:</strong> ${l.nome}</p>
+      <p><span class="selo">${TOM.selo}</span></p>
+      <div class="intro"><p>Você participa do <strong>Programa Coração de Herói</strong>, um acompanhamento contínuo
+        (longitudinal) dos fatores que influenciam a saúde do coração — como pressão arterial, colesterol, açúcar no
+        sangue e peso. ${TOM.texto}</p></div>
+      ${pendenteHtml}
+      <h2>Seus resultados na última avaliação (${l.data})</h2>
+      <table><thead><tr><th>Exame</th><th>Seu valor</th><th>Meta recomendada</th><th>Situação</th></tr></thead>
+        <tbody>${linhasTabela}</tbody></table>
+      <h2>Como isso mudou ao longo do tempo</h2>
+      <div class="charts">
+        ${graf1 ? `<div>${graf1}<p>Pressão arterial ao longo das suas avaliações.</p></div>` : ""}
+        ${graf2 ? `<div>${graf2}<p>Índice de massa corporal (IMC) ao longo das suas avaliações.</p></div>` : ""}
+        ${!graf1 && !graf2 ? "<p>Ainda não há avaliações suficientes para montar o gráfico de evolução.</p>" : ""}
+      </div>
+      <h2>O que fazer agora</h2>
+      ${tratamentoHtml}
+      <p>Realize os exames solicitados nas datas indicadas e compareça às consultas de retorno — é assim que a
+        equipe consegue acompanhar sua evolução e ajustar o tratamento quando necessário.</p>
+      <div class="print-bar"><button onclick="window.print()">🖨 Imprimir / salvar em PDF</button></div>
+      <footer>Documento informativo gerado a partir da inspeção de saúde periódica. Não substitui a orientação
+        da equipe médica — em caso de dúvida, procure a 1ª Policlínica.</footer>
+      </body></html>`;
+
+    const w = window.open("", "_blank");
+    if (!w) { alert("O navegador bloqueou a nova janela. Permita pop-ups para abrir o relatório do paciente."); return; }
+    w.document.write(html);
+    w.document.close();
+  }
 
   function detalheMilitar(l) {
     const S = l.serie || [];
@@ -3146,12 +3336,42 @@ if (!window.CDH_PUBLICO) {
     if (l.etfg != null) risco.push(`TFG ${fmt0(l.etfg)} mL/min`);
     if (l.uacr != null) risco.push(`RAC ${fmt(l.uacr, 1)} mg/g`);
 
+    // ---- resumo clínico copiável (equipe médica) ----
+    const texto = textoClinico(l);
+    const btnCopiar = h("button", { class: "chip-btn", type: "button" }, "📋 Copiar texto");
+    btnCopiar.addEventListener("click", () => {
+      const restaurar = () => { btnCopiar.textContent = "📋 Copiar texto"; };
+      const marcarCopiado = () => { btnCopiar.textContent = "Copiado ✓"; setTimeout(restaurar, 1800); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(marcarCopiado, () => {
+          areaTexto.select(); document.execCommand("copy"); marcarCopiado();
+        });
+      } else {
+        areaTexto.select(); document.execCommand("copy"); marcarCopiado();
+      }
+    });
+    const areaTexto = h("textarea", { class: "clin-copy", rows: "6", readonly: "", "aria-label": `Resumo clínico de ${l.nome}` }, texto);
+    const blocoClinico = h("div", { style: "margin-top:14px" },
+      h("p", { class: "fig-title" }, "Resumo para prontuário"),
+      h("p", { class: "fig-sub" }, "Texto corrido gerado a partir dos dados desta inspeção — copie e cole em relatórios externos."),
+      areaTexto,
+      h("div", { style: "margin-top:6px" }, btnCopiar));
+
+    // ---- relatório imprimível para o paciente ----
+    const blocoPaciente = h("div", { style: "margin-top:14px" },
+      h("button", {
+        class: "chip-btn primary", type: "button",
+        onclick: () => abrirRelatorioPaciente(l),
+      }, "🖨 Relatório para o paciente"));
+
     return h("div", { class: "rank-detail", hidden: "" },
       h("div", { class: "mot-list" },
+        h("span", { class: "atero-pill", style: `background:${flagAtero(l).cor}` }, `${flagAtero(l).icone} ${flagAtero(l).texto}`),
         risco.map((m) => h("span", { class: "mot", style: "border-color:color-mix(in srgb,var(--brand-gold) 40%,transparent);background:color-mix(in srgb,var(--brand-gold) 10%,var(--surface-1))" }, m))),
       h("div", { class: "mot-list" }, (l.motivos || []).map((m) => h("span", { class: "mot" }, m))),
       h("div", { class: "tabs", role: "tablist" }, tabTab, tabGraf),
-      painelTabela, painelGraf);
+      painelTabela, painelGraf,
+      blocoClinico, blocoPaciente);
   }
 
   const lista = h("div", { style: "margin-top:16px" });
@@ -3182,10 +3402,11 @@ if (!window.CDH_PUBLICO) {
             `${l.idade === null ? "—" : fmt0(l.idade)} anos · ${l.sexo || "—"} · `
             + `PA ${l.pas === null ? "—" : fmt0(l.pas) + "/" + fmt0(l.pad)} · `
             + `IMC ${l.imc === null ? "—" : fmt(l.imc, 1)} · LDL ${l.ldl === null ? "—" : fmt0(l.ldl)}`
-            + (l.atero_prevent === 1 ? " · PREVENT não se aplica (aterosclerose)"
-              : l.rastreio_pendente ? " · ⚠ rastreio de aterosclerose pendente"
-                : l.cvd10 != null ? ` · PREVENT ${pct(l.cvd10, 1)} em 10 anos` : ""))),
-        h("span", { class: "rank-score", style: `background:${corDoEscore(l.escore)}` }, `${l.escore} pts`));
+            + (l.atero_prevent !== 1 && !l.rastreio_pendente && l.cvd10 != null
+              ? ` · PREVENT ${pct(l.cvd10, 1)} em 10 anos` : ""))),
+        h("span", { style: "display:flex;flex-direction:column;align-items:flex-end;gap:4px" },
+          pillAtero(l),
+          h("span", { class: "rank-score", style: `background:${corDoEscore(l.escore)}` }, `${l.escore} pts`)));
       lista.appendChild(linha);
       lista.appendChild(det);
       construidos.add(l.rg);
@@ -3211,25 +3432,15 @@ if (!window.CDH_PUBLICO) {
   montarLinhas(15);
   s.appendChild(lista);
 
-  s.appendChild(h("div", { style: "margin-top:16px" }, figura({
-    titulo: "Fila de rastreio de aterosclerose",
-    sub: `${fmt0(PEND.n)} militares (${pct(PEND.pct, 0)} da coorte) não têm investigação de aterosclerose registrada — sem ela não se sabe se estão em prevenção primária ou secundária. Ordenados pelo escore de gravidade.`,
-    render: (c) => C.barsH(c, {
-      data: PEND.fila.slice(0, 15).map((x) => ({
-        label: `#${x.posicao} · ${x.nome}`, value: x.escore,
-        color: C.SEV(x.escore >= R.escore_max - 3 ? 4 : x.escore >= PEND.escore_medio ? 3 : 1),
-        tip: [["Escore", `${fmt0(x.escore)} pontos`], ["Posição no ranking", `#${fmt0(x.posicao)}`],
-        ["Idade", `${fmt0(x.idade)} anos`], ["LDL", x.ldl == null ? "—" : `${fmt0(x.ldl)} mg/dL`],
-        ["IMC", x.imc == null ? "—" : fmt(x.imc, 1)], ["Diabetes", x.dm ? "sim" : "não"]],
-      })),
-      max: R.escore_max * 1.1, valueFmt: (d) => fmt0(d.value) + " pts",
-      aria: "Fila de prioridade para rastreio de aterosclerose",
-    }),
-    nota: "Prioridade de exame de imagem: ultrassom de carótidas, escore de cálcio coronariano ou índice tornozelo-braquial.",
-    tabela: () => tabela(["#", "Militar", "Escore", "Idade", "LDL", "IMC", "Diabetes"],
-      PEND.fila.map((x) => [x.posicao, x.nome, x.escore, fmt0(x.idade),
-      x.ldl == null ? "—" : fmt0(x.ldl), x.imc == null ? "—" : fmt(x.imc, 1), x.dm ? "sim" : "—"])),
-  })));
+  const semHba1c = D.prevent.sem_hba1c;
+  s.appendChild(h("div", { class: "grid g2", style: "margin-top:16px" },
+    h("div", { class: "tile gold" }, h("p", { class: "tile-label" }, "Sem rastreio de aterosclerose"),
+      h("div", { class: "tile-value" }, fmt0(PEND.n), h("small", {}, `de ${fmt0(R.n)}`)),
+      h("p", { class: "tile-note" }, `${pct(PEND.pct, 0)} da coorte — sem investigação registrada, não se sabe se estão em prevenção primária ou secundária. `
+        + `${fmt0(PEND.acima_media)} já pontuam acima da média do escore. Exame indicado: ultrassom de carótidas, escore de cálcio coronariano ou índice tornozelo-braquial.`)),
+    h("div", { class: "tile gold" }, h("p", { class: "tile-label" }, "Sem HbA1c registrada"),
+      h("div", { class: "tile-value" }, fmt0(semHba1c), h("small", {}, `de ${fmt0(D.prevent.n_total)}`)),
+      h("p", { class: "tile-note" }, `${pct(100 * semHba1c / D.prevent.n_total, 0)} da coorte sem hemoglobina glicada — exame que refina a estimativa de risco PREVENT e detecta pré-diabetes/diabetes ainda não diagnosticado.`))));
 
   const maisGrave = top[0];
   const tratadosSemControle = R.linhas.filter((l) => (l.antihas && l.pas !== null && (l.pas > 130 || l.pad > 80)) || (l.estatina && l.ldl !== null && l.ldl > 115)).length;
